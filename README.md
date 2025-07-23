@@ -37,8 +37,8 @@ roffs [flags] SOURCE TARGET
 
 ### Flags
 
--- `-c, --config string`   Path to a config file (required if no `--rules` provided).
--- `-r, --rules string`    Inline rule expression; can be specified multiple times (overrides `--config`).
+- `-c, --config string`   Path to a config file (required if no `--rules` provided).
+- `-r, --rules string`    Inline rule expression; can be specified multiple times (overrides `--config`).
 
 ### Rule Syntax
 
