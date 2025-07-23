@@ -1,29 +1,74 @@
 package main
 
 import (
+	"bazil.org/fuse"
+	fusefs "bazil.org/fuse/fs"
 	"context"
-	"flag"
-	"log"
+	"fmt"
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/vm"
+	"github.com/spf13/cobra"
+	stdfs "io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-
-	stdfs "io/fs"
-
-	"bazil.org/fuse"
-	fusefs "bazil.org/fuse/fs"
-
-	"github.com/expr-lang/expr"
-	"github.com/expr-lang/expr/vm"
 )
 
 var (
-	sourcePath string
-	configPath string
-	ruleExpr   string
+   sourcePath string
+   configPath string
+   ruleExprs  []string
 )
+var rootCmd = &cobra.Command{
+   Use:   "roffs [flags] SOURCE TARGET",
+   Short: "Mount a read-only filesystem with filtering rules",
+   Args:  cobra.ExactArgs(2),
+   PreRunE: func(cmd *cobra.Command, args []string) error {
+       if configPath == "" && len(ruleExprs) == 0 {
+           return fmt.Errorf("either --config or --rules must be provided")
+       }
+       return nil
+   },
+   RunE: func(cmd *cobra.Command, args []string) error {
+       // assign source and target
+       sourcePath = args[0]
+       mountpoint := args[1]
+       // parse inline rules or config file
+       if len(ruleExprs) > 0 {
+           for _, expr := range ruleExprs {
+               if err := parseInlineRules(expr); err != nil {
+                   return fmt.Errorf("failed to parse inline rules: %w", err)
+               }
+           }
+       } else {
+           if err := parseConfig(configPath); err != nil {
+               return fmt.Errorf("failed to parse config: %w", err)
+           }
+       }
+       // mount filesystem
+       c, err := fuse.Mount(mountpoint, fuse.ReadOnly())
+       if err != nil {
+           return err
+       }
+       defer c.Close()
+       if err := fusefs.Serve(c, FS{}); err != nil {
+           return err
+       }
+       return nil
+   },
+}
+
+func init() {
+	rootCmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to config file")
+	rootCmd.Flags().StringArrayVarP(&ruleExprs, "rules", "r", []string{}, "Inline rule expression(s) (overrides config file)")
+}
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
 
 type Rule struct {
 	Filter    string
@@ -41,45 +86,6 @@ type Config struct {
 }
 
 var config Config
-
-func main() {
-	flag.StringVar(&sourcePath, "source", "", "Path to source directory")
-	flag.StringVar(&configPath, "config", "/etc/rofs-filtered.rc", "Path to config file")
-	flag.StringVar(&ruleExpr, "rules", "", "Inline rule expression (overrides config file)")
-	flag.Parse()
-
-	if sourcePath == "" {
-		log.Fatal("-source is required")
-	}
-
-	if ruleExpr != "" {
-		err := parseInlineRules(ruleExpr)
-		if err != nil {
-			log.Fatalf("failed to parse rules: %v", err)
-		}
-	} else {
-		err := parseConfig(configPath)
-		if err != nil {
-			log.Fatalf("failed to parse config: %v", err)
-		}
-	}
-
-	mountpoint := flag.Arg(0)
-	if mountpoint == "" {
-		log.Fatal("mountpoint is required")
-	}
-
-	c, err := fuse.Mount(mountpoint, fuse.ReadOnly())
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer c.Close()
-
-	err = fusefs.Serve(c, FS{})
-	if err != nil {
-		log.Fatal(err)
-	}
-}
 
 func parseConfig(path string) error {
 	data, err := os.ReadFile(path)

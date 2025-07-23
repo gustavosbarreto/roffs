@@ -8,20 +8,37 @@ This project provides a read-only FUSE filesystem that filters and displays file
 
 - Expression-based filtering using [expr-lang](https://github.com/expr-lang/expr)
 - Optional file sorting and limiting
-- Configurable via config file or `-rules` command-line flag
+- Configurable via config file or one/more `-rules` command-line flags
 - Supports mounting a filtered view of an existing directory
+
+## Installation
+
+Prerequisites: Go 1.18+ and a working FUSE setup (e.g., libfuse on Linux, macFUSE on macOS).
+
+To install the `roffs` binary with Go modules:
+```bash
+go install github.com/gustavosbarreto/roffs@latest
+```
+
+This will place `roffs` in your `$GOPATH/bin` (or `$HOME/go/bin`). Ensure it's in your `PATH`.
+
+Alternatively, build from source:
+```bash
+git clone https://github.com/gustavosbarreto/roffs.git
+cd roffs
+go build -o roffs
+```
 
 ## Usage
 
 ```bash
-rofs-filtered -source /path/to/real/data /mnt/filtered
+roffs [flags] SOURCE TARGET
 ```
 
-### Command-Line Flags
+### Flags
 
-- `-source`: **Required**. Path to the real directory that will be mounted as read-only.
-- `-config`: Optional. Path to the config file (default: `/etc/rofs-filtered.rc`).
-- `-rules`: Optional. Inline rule expression that overrides the config file (see below).
+-- `-c, --config string`   Path to a config file (required if no `--rules` provided).
+-- `-r, --rules string`    Inline rule expression; can be specified multiple times (overrides `--config`).
 
 ### Rule Syntax
 
@@ -31,25 +48,27 @@ The rules define a pipeline using `|` syntax. Each rule can contain:
 - `sort <field> <asc|desc>`: Sorts by `name` or `size`
 - `limit <N>`: Restricts to the first N entries after filtering and sorting
 
-You can provide multiple rules using multiple `-rules` flags or multiple lines in a config file. The union of all rule matches will be shown in the mounted filesystem.
+Multiple rule pipelines can be specified as separate lines in the config file. When using inline `--rules`, you can provide multiple pipelines by repeating the flag.
 
 ### Examples
 
-#### From config file `/etc/rofs-filtered.rc`
+#### Config file format
+Each line in the config file defines a pipeline. Lines starting with `#` or blank lines are ignored.
+Example `config.txt`:
 ```txt
 filter name =~ "file-\d+" | sort size desc | limit 5
 filter ext == ".log" && size > 1048576
 ```
 
-#### Using `-rules` inline:
+#### Using inline rules
 ```bash
-rofs-filtered -source /data -rules 'filter name =~ "file-\d+" | sort size desc | limit 3' /mnt/filtered
+roffs -r 'filter name =~ "file-\d+" | sort size desc | limit 3' ./data /mnt/filtered
 ```
 
-To add multiple `-rules` inline:
+#### Multiple inline rules
 ```bash
-rofs-filtered -source /data \
-  -rules 'filter name =~ "file-\d+" | sort size desc | limit 3' \
-  -rules 'filter ext == ".log" && size > 1048576' \
-  /mnt/filtered
+roffs \
+  -r 'filter ext == ".go"' \
+  -r 'filter size > 1024' \
+  ./data /mnt/filtered
 ```
